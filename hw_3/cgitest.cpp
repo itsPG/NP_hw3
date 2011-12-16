@@ -51,7 +51,7 @@ public:
 	int FSM[11];
 	int count[11];
 	int connecting[11];
-	const static int F_CONNECTING = 1, F_READING = 2, F_WRITING = 3, F_DONE = 4;
+	const static int F_CONNECTING = 1, F_READING = 2, F_WRITING = 3, F_LAST_READ = 4, F_DONE = 5;
 	int max;
 	PG_clients()
 	{
@@ -64,7 +64,7 @@ public:
 		count[q] = 0;
 		connecting[q] = 1;
 		FSM[q] = F_CONNECTING;
-		data[q] = "who\nls \n";
+		data[q] = "ls\nls\n";
 		he = gethostbyname(host_name[q].c_str());
 		if (he == NULL)
 		{
@@ -103,61 +103,86 @@ public:
 		
 		while(1)
 		{
+			//cout << "in" << endl;
 			memcpy(&rfds, &rs, sizeof(rfds));
 			memcpy(&wfds, &ws, sizeof(wfds));
 			if (select(1024, &rfds, &wfds, (fd_set*)0, (struct timeval*)0) < 0){perror("select error"); exit(1);}
+			int t;
 			for (int i = 1; i <= max; i++)
 			{
-				int t;
-				if (connecting[i])
+				usleep(100);
+				switch(FSM[i])
 				{
-					if (FD_ISSET(fd[i], &rfds) || FD_ISSET(fd[i], &wfds))
-					{
-						if (getsockopt(fd[i], SOL_SOCKET, SO_ERROR, (void*)&error, &n) <0 || error != 0)
+					case F_CONNECTING:
+						cout << "connecting" << endl;
+						if (FD_ISSET(fd[i], &rfds) || FD_ISSET(fd[i], &wfds))
 						{
-							perror("select error");
-							exit(1);
+							if (getsockopt(fd[i], SOL_SOCKET, SO_ERROR, (void*)&error, &n) <0 || error != 0)
+							{
+								perror("select error");
+								exit(1);
+							}
+							FD_CLR(fd[i], &rs);
+							FSM[i] = F_WRITING;
+							cout << "writing" << endl;
 						}
-						connecting[i] = 0;
-					}
-				}
-				else
-				{
-					if (FD_ISSET(fd[i], &rfds))
-					{
-						bzero(buf, sizeof(buf));
-						t = read(fd[i], buf, sizeof(buf)-1);
-						if (t == 0)
-						{
-							cout << "read finished" << endl;
-							return 0;
-						}
-						cout << "read " << t << endl;
-						cout << buf << endl;
-					}
+						break;
 					
-					if (FD_ISSET(fd[i], &wfds))
-					{
-						//cout << "write ready" << endl;
-						while (count[i] < data[i].size() && write(fd[i], data[i].c_str()+count[i], 1) )
+					case F_WRITING:
+						if (FD_ISSET(fd[i], &wfds))
 						{
-							//cout << "w " << data[i][count[i]] << endl;
+							cout << "write in" << endl;
+							string tmp = "";
+							while (data[i][count[i]] != '\n')
+							{
+								tmp += data[i][count[i]];
+								count[i]++;
+							}
+							tmp += data[i][count[i]];
 							count[i]++;
-							//if (data[i][count[i]-1] == '\n')break;
+							t = write(fd[i], tmp.c_str(), tmp.size());
+							cout << "write " << t << endl;
+							FD_CLR(fd[i], &ws);
+							FD_SET(fd[i], &rs);
+							FSM[i] = F_READING;
 						}
-						if (count[i] >= data[i].size())
+						break;
+						
+					case F_READING:
+						//cout << "reading" << endl;
+						//cout << "r " << FD_ISSET(fd[i], &rfds) << endl;
+						//cout << "w " << FD_ISSET(fd[i], &wfds) << endl;
+						if (FD_ISSET(fd[i], &rfds))
 						{
-								cout << "finished" << endl;
-								
-								FD_CLR(fd[i], &ws);
-								//FD_CLR(fd[i], &rs);
+							char c;
+							string msg = "";
+							while (t = read(fd[i], &c, 1) >0)msg += c;
+							cout << "read " << msg << endl;
+							if(count[i] >= data[i].size()-1)
+							{
+								FSM[i] = F_LAST_READ;
+							}
+							else
+							{
+								FD_SET(fd[i], &ws);
+								FD_CLR(fd[i], &rs);
+								FSM[i] = F_WRITING;
+							}
 						}
-						else
+						break;
+						
+					case F_LAST_READ:
+						if (FD_ISSET(fd[i], &rfds))
 						{
-							perror("write error");
+							char c;
+							string msg = "";
+							while (t = read(fd[i], &c, 1) >0)msg += c;
+							cout << "read " << msg << endl;
+							cout << "DONE" << endl;
+							shutdown(fd[i],2);
+							close(fd[i]);
+							exit(0);
 						}
-					}
-					
 				}
 			}
 		}
