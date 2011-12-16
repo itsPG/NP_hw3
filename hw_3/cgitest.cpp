@@ -53,11 +53,12 @@ public:
 	int connecting[11];
 	const static int F_CONNECTING = 1, F_READING = 2, F_WRITING = 3, F_LAST_READ = 4, F_DONE = 5;
 	int max;
+	int alive;
 	PG_clients()
 	{
 		max = 0;
+		alive = 0;
 		FD_ZERO(&rfds); FD_ZERO(&wfds); FD_ZERO(&rs); FD_ZERO(&ws);
-		//FD_SET();
 	}
 	void init(int q)
 	{
@@ -80,20 +81,24 @@ public:
 		fcntl(fd[q], F_SETFL, flags | O_NONBLOCK);
 		FD_SET(fd[q], &rs);
 		FD_SET(fd[q], &ws);
-		//rfds = rs; wfds = ws;
 	}
 	void conekuto(int q)
 	{
 		if (connect(fd[q], (struct sockaddr *)&sin[q], sizeof(sin[q])) < 0)
 		{
-			if (errno != EINPROGRESS)
-			{
-				perror("failed in PG_clients -> conekuto");
-				exit(1);
-			}
-			//cout << "error" << endl;
+			if (errno != EINPROGRESS){perror("failed in PG_clients -> conekuto"); exit(1);}
 			FSM[q] = F_CONNECTING;
 		}
+		alive++;
+		
+	}
+	string recv_msg(int q)
+	{
+		char c;
+		string msg = "";
+		while (read(q, &c, 1) > 0)msg += c;
+		cout << "recv msg get " << msg << endl;
+		return msg;
 	}
 	int go()
 	{
@@ -101,7 +106,7 @@ public:
 		int error;
 		socklen_t n;
 		
-		while(1)
+		while(alive)
 		{
 			//cout << "in" << endl;
 			memcpy(&rfds, &rs, sizeof(rfds));
@@ -114,7 +119,6 @@ public:
 				switch(FSM[i])
 				{
 					case F_CONNECTING:
-						cout << "connecting" << endl;
 						if (FD_ISSET(fd[i], &rfds) || FD_ISSET(fd[i], &wfds))
 						{
 							if (getsockopt(fd[i], SOL_SOCKET, SO_ERROR, (void*)&error, &n) <0 || error != 0)
@@ -124,14 +128,12 @@ public:
 							}
 							FD_CLR(fd[i], &rs);
 							FSM[i] = F_WRITING;
-							cout << "writing" << endl;
 						}
 						break;
 					
 					case F_WRITING:
 						if (FD_ISSET(fd[i], &wfds))
 						{
-							cout << "write in" << endl;
 							string tmp = "";
 							while (data[i][count[i]] != '\n')
 							{
@@ -141,7 +143,6 @@ public:
 							tmp += data[i][count[i]];
 							count[i]++;
 							t = write(fd[i], tmp.c_str(), tmp.size());
-							cout << "write " << t << endl;
 							FD_CLR(fd[i], &ws);
 							FD_SET(fd[i], &rs);
 							FSM[i] = F_READING;
@@ -149,15 +150,9 @@ public:
 						break;
 						
 					case F_READING:
-						//cout << "reading" << endl;
-						//cout << "r " << FD_ISSET(fd[i], &rfds) << endl;
-						//cout << "w " << FD_ISSET(fd[i], &wfds) << endl;
 						if (FD_ISSET(fd[i], &rfds))
 						{
-							char c;
-							string msg = "";
-							while (t = read(fd[i], &c, 1) >0)msg += c;
-							cout << "read " << msg << endl;
+							string msg = recv_msg(fd[i]);
 							if(count[i] >= data[i].size()-1)
 							{
 								FSM[i] = F_LAST_READ;
@@ -174,20 +169,15 @@ public:
 					case F_LAST_READ:
 						if (FD_ISSET(fd[i], &rfds))
 						{
-							char c;
-							string msg = "";
-							while (t = read(fd[i], &c, 1) >0)msg += c;
-							cout << "read " << msg << endl;
-							cout << "DONE" << endl;
+							string msg = recv_msg(fd[i]);
 							shutdown(fd[i],2);
 							close(fd[i]);
-							exit(0);
+							alive--;
 						}
 				}
 			}
 		}
 	}
-	
 };
 int main()
 {
