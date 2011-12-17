@@ -1,5 +1,7 @@
 #include <iostream>
 #include <map>
+#include <fstream>
+#include <sstream>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,28 +15,57 @@
 #include <fcntl.h>
 #include <errno.h>
 using namespace std;
-class Http_Parse
+string i2s(int q)
+{
+	ostringstream sout;
+	sout << q;
+	return sout.str();
+}
+int s2i(string q)
+{
+	int r;
+	istringstream ssin(q);
+	ssin >> r;
+	return r;
+}
+class PG_http_parse
 {
 public:
 	map<string, string> arg;
 	void set(string q)
 	{
+
 		int at = 0;
-		while (q[at] != '=') at++;
-		//cout << "set " << q.substr(0,at) << " " << q.substr(at+1) << endl;
+		while (q[at] != '=' && at < q.size()) at++;
+		if (at == q.size()-1) return;
+
 		arg[q.substr(0,at)] = q.substr(at+1);
+
 	}
-	Http_Parse()
+	void parse()
 	{
 		string q = getenv("QUERY_STRING");
+		cout << "QUERY_STRING " << q << endl;
 		q = q + "&";
 		int s = 0, e = 0;
-		while (1)
+		while (s < q.size())
 		{
 			while (q[e] != '&') e++;
 			set(q.substr(s,e-s));
 			s = e + 1;
 			e += 2;
+		}
+	}
+	bool chk_arg(string q)
+	{
+		if (arg.find(q) != arg.end())return 1;
+		else return 0;
+	}
+	void list_arg()
+	{
+		for (map<string, string>::iterator i = arg.begin(); i != arg.end(); ++i)
+		{
+			cout << i->first << " " << i->second << endl;
 		}
 	}
 };
@@ -47,13 +78,16 @@ public:
 	struct hostent *he;
 	string host_name[11];
 	string data[11];
+	string cmd[11][10001];
 	int port[11];
 	int FSM[11];
 	int count[11];
-	int connecting[11];
+	int cmd_m[11];
+	bool done_flag[11];
 	const static int F_CONNECTING = 1, F_READING = 2, F_WRITING = 3, F_LAST_READ = 4, F_DONE = 5;
 	int max;
 	int alive;
+	bool pa_detect;
 	PG_clients()
 	{
 		max = 0;
@@ -63,9 +97,8 @@ public:
 	void init(int q)
 	{
 		count[q] = 0;
-		connecting[q] = 1;
+		done_flag[q] = 0;
 		FSM[q] = F_CONNECTING;
-		data[q] = "ls\nls\n";
 		he = gethostbyname(host_name[q].c_str());
 		if (he == NULL)
 		{
@@ -90,15 +123,61 @@ public:
 			FSM[q] = F_CONNECTING;
 		}
 		alive++;
+	}
+	void add_user(string ip, string pt, string fn)
+	{
+		max++;
+		host_name[max] = ip;
+		port[max] = s2i(pt);
+		data[max] = "";
+		ifstream fin(fn.data());
+		char c;
+		while (fin.get(c)) data[max] += c;
+		//cout << "client " << max << " get " << data[max] << endl;
 		
+		init(max);
+		conekuto(max);
 	}
 	string recv_msg(int q)
 	{
+		pa_detect = 0;
 		char c;
 		string msg = "";
-		while (read(q, &c, 1) > 0)msg += c;
-		cout << "recv msg get " << msg << endl;
+		while (read(fd[q], &c, 1) > 0)
+		{
+			if (c == '\n')
+			{
+				//cout << "got " << msg << endl;
+				//msg += "<br/>";
+				break;
+			}
+			msg += c;
+			if (c == '%')pa_detect = 1;
+			
+		}
+		//cout << "recv msg get size " << msg.size() << endl; 
+		//cout << msg << endl;
+		//cout << msg ;
 		return msg;
+	}
+	void send_msg(int q)
+	{
+		string tmp = "";
+		while (data[q][count[q]] != '\n')
+		{
+			tmp += data[q][count[q]];
+			count[q]++;
+		}
+		if (tmp == "exit") done_flag[q] = 1;
+		tmp += data[q][count[q]];
+		count[q]++;
+		//cout << "write break at " << count[i] << endl;
+		//cout << "write " << tmp << " / size:" << tmp.size() << endl;
+		write(fd[q], tmp.c_str(), tmp.size());
+	}
+	void print_msg(string q)
+	{
+	
 	}
 	int go()
 	{
@@ -108,14 +187,14 @@ public:
 		
 		while(alive)
 		{
-			//cout << "in" << endl;
 			memcpy(&rfds, &rs, sizeof(rfds));
 			memcpy(&wfds, &ws, sizeof(wfds));
 			if (select(1024, &rfds, &wfds, (fd_set*)0, (struct timeval*)0) < 0){perror("select error"); exit(1);}
 			int t;
+			//usleep(30000);
 			for (int i = 1; i <= max; i++)
 			{
-				usleep(100);
+				
 				switch(FSM[i])
 				{
 					case F_CONNECTING:
@@ -126,71 +205,98 @@ public:
 								perror("select error");
 								exit(1);
 							}
-							FD_CLR(fd[i], &rs);
-							FSM[i] = F_WRITING;
+							FD_CLR(fd[i], &ws);
+							FSM[i] = F_READING;
 						}
 						break;
 					
 					case F_WRITING:
+						//cout << "writing " << endl;
 						if (FD_ISSET(fd[i], &wfds))
 						{
-							string tmp = "";
-							while (data[i][count[i]] != '\n')
-							{
-								tmp += data[i][count[i]];
-								count[i]++;
-							}
-							tmp += data[i][count[i]];
-							count[i]++;
-							t = write(fd[i], tmp.c_str(), tmp.size());
+							send_msg(i);
 							FD_CLR(fd[i], &ws);
 							FD_SET(fd[i], &rs);
 							FSM[i] = F_READING;
+							if (done_flag[i])
+							{
+								FD_CLR(fd[i], &ws);
+								FD_CLR(fd[i], &rs);
+								shutdown(fd[i],2);
+								close(fd[i]);
+								alive--;
+							}
 						}
 						break;
 						
 					case F_READING:
+						//cout << "reading " << endl;
 						if (FD_ISSET(fd[i], &rfds))
 						{
-							string msg = recv_msg(fd[i]);
-							if(count[i] >= data[i].size()-1)
+							string msg = recv_msg(i);
+							//cout << "<script language = \"JavaScript\">document.all[\'m";
+							//cout << i;
+							//cout << "\'].innerHTML += \"" << msg << "\";</script>" << endl;
+							cout << msg << endl;
+							if(count[i] >= data[i].size()-1 || done_flag[i])
 							{
+								cout << "!! " << count[i] << " " << data[i].size() << endl;
 								FSM[i] = F_LAST_READ;
 							}
 							else
 							{
-								FD_SET(fd[i], &ws);
-								FD_CLR(fd[i], &rs);
-								FSM[i] = F_WRITING;
+								if (pa_detect)
+								{
+									FD_SET(fd[i], &ws);
+									FD_CLR(fd[i], &rs);
+									FSM[i] = F_WRITING;
+								}
 							}
 						}
 						break;
-						
-					case F_LAST_READ:
-						if (FD_ISSET(fd[i], &rfds))
-						{
-							string msg = recv_msg(fd[i]);
-							shutdown(fd[i],2);
-							close(fd[i]);
-							alive--;
-						}
 				}
 			}
 		}
+		//cout << "<script >alert(document.all[\'m1\'].innerHTML);</script>" << endl;
+		cout << "go end" << endl;
+	}
+};
+class PG_hw3_main
+{
+public:
+	string head;
+	void output_head()
+	{
+		head = "";
+		ifstream fin("/home/PG/NP/hw_3/head.html");
+		char c;
+		while (fin.get(c))head += c;
+		cout << head;
+	}
+	void main()
+	{
+		//output_head();
+		PG_clients clients;
+		PG_http_parse h;
+		h.parse();
+		h.list_arg();
+		//return;
+		if (h.chk_arg("h1")) clients.add_user(h.arg["h1"], h.arg["p1"], h.arg["f1"]);
+		if (h.chk_arg("h2")) clients.add_user(h.arg["h2"], h.arg["p2"], h.arg["f2"]);
+		if (h.chk_arg("h3")) clients.add_user(h.arg["h3"], h.arg["p3"], h.arg["f3"]);
+		if (h.chk_arg("h4")) clients.add_user(h.arg["h4"], h.arg["p4"], h.arg["f4"]);
+		if (h.chk_arg("h5")) clients.add_user(h.arg["h5"], h.arg["p5"], h.arg["f5"]);
+		clients.go();
 	}
 };
 int main()
 {
-	PG_clients t;
-	t.max = 1;
-	t.host_name[1] = "127.0.0.1";
-	t.port[1] = 7000;
-	t.init(1);
-	t.conekuto(1);
-	t.go();
 	cout << "Content-Type:text/html;\n\n" << endl;
-	//cout << "Hello World" << endl;
-	//cout << getenv("QUERY_STRING") << endl;
-	//Http_Parse a;
+	cout << "<pre>" << endl;
+	PG_hw3_main Rixia;
+	Rixia.main();
+	cout << "</pre>" << endl;
+	return 0;
+
 }
 
