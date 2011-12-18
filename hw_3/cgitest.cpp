@@ -45,7 +45,7 @@ public:
 	void parse()
 	{
 		string q = getenv("QUERY_STRING");
-		cout << "QUERY_STRING " << q << endl;
+		//cout << "QUERY_STRING " << q << endl;
 		q = q + "&";
 		int s = 0, e = 0;
 		while (s < q.size())
@@ -145,19 +145,16 @@ public:
 		string msg = "";
 		while (read(fd[q], &c, 1) > 0)
 		{
-			if (c == '\n')
-			{
-				//cout << "got " << msg << endl;
-				//msg += "<br/>";
-				break;
-			}
+			if (c == '\r') continue;
+			//cout << "!R!" << endl;
 			msg += c;
 			if (c == '%')pa_detect = 1;
-			
+			if (c == '\n')
+			{
+				if (msg[msg.size()-1] == '\r') msg.erase(msg.size()-1);
+				break;
+			}
 		}
-		//cout << "recv msg get size " << msg.size() << endl; 
-		//cout << msg << endl;
-		//cout << msg ;
 		return msg;
 	}
 	void send_msg(int q)
@@ -175,9 +172,23 @@ public:
 		//cout << "write " << tmp << " / size:" << tmp.size() << endl;
 		write(fd[q], tmp.c_str(), tmp.size());
 	}
-	void print_msg(string q)
+	void print_msg_unit(string q, string at, int i)
 	{
-	
+		cout << "<script language = \"JavaScript\">document.all[\'";
+		cout << at << i;
+		cout << "\'].innerHTML += \"" << q << "\";</script>" << endl;
+	}
+	void print_msg(string q, int i)
+	{
+		if(q.find('\n') != string::npos)
+		{
+			q.erase(q.find('\n'),1);
+		}
+		print_msg_unit(q+"<br/>", "m", i);
+	}
+	void print_head(int q)
+	{
+		//print_msg("")
 	}
 	int go()
 	{
@@ -191,10 +202,9 @@ public:
 			memcpy(&wfds, &ws, sizeof(wfds));
 			if (select(1024, &rfds, &wfds, (fd_set*)0, (struct timeval*)0) < 0){perror("select error"); exit(1);}
 			int t;
-			//usleep(30000);
+			usleep(30000);
 			for (int i = 1; i <= max; i++)
 			{
-				
 				switch(FSM[i])
 				{
 					case F_CONNECTING:
@@ -211,7 +221,6 @@ public:
 						break;
 					
 					case F_WRITING:
-						//cout << "writing " << endl;
 						if (FD_ISSET(fd[i], &wfds))
 						{
 							send_msg(i);
@@ -230,27 +239,24 @@ public:
 						break;
 						
 					case F_READING:
-						//cout << "reading " << endl;
 						if (FD_ISSET(fd[i], &rfds))
 						{
 							string msg = recv_msg(i);
-							//cout << "<script language = \"JavaScript\">document.all[\'m";
-							//cout << i;
-							//cout << "\'].innerHTML += \"" << msg << "\";</script>" << endl;
-							cout << msg << endl;
-							if(count[i] >= data[i].size()-1 || done_flag[i])
+							if (msg == "")
 							{
-								cout << "!! " << count[i] << " " << data[i].size() << endl;
-								FSM[i] = F_LAST_READ;
+								cout << "read error!!" << endl;
+								FD_CLR(fd[i], &ws);
+								FD_CLR(fd[i], &rs);
+								shutdown(fd[i],2);
+								close(fd[i]);
+								alive--;
 							}
-							else
+							print_msg(msg, i);
+							if (pa_detect)
 							{
-								if (pa_detect)
-								{
-									FD_SET(fd[i], &ws);
-									FD_CLR(fd[i], &rs);
-									FSM[i] = F_WRITING;
-								}
+								FD_SET(fd[i], &ws);
+								FD_CLR(fd[i], &rs);
+								FSM[i] = F_WRITING;
 							}
 						}
 						break;
@@ -275,11 +281,11 @@ public:
 	}
 	void main()
 	{
-		//output_head();
+		output_head();
 		PG_clients clients;
 		PG_http_parse h;
 		h.parse();
-		h.list_arg();
+		//h.list_arg();
 		//return;
 		if (h.chk_arg("h1")) clients.add_user(h.arg["h1"], h.arg["p1"], h.arg["f1"]);
 		if (h.chk_arg("h2")) clients.add_user(h.arg["h2"], h.arg["p2"], h.arg["f2"]);
@@ -292,10 +298,10 @@ public:
 int main()
 {
 	cout << "Content-Type:text/html;\n\n" << endl;
-	cout << "<pre>" << endl;
+
 	PG_hw3_main Rixia;
 	Rixia.main();
-	cout << "</pre>" << endl;
+
 	return 0;
 
 }

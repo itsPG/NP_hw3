@@ -1,5 +1,8 @@
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <map>
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,7 +87,7 @@ public:
 				close(l_fd);
 				dup2(c_fd, 0);
 				dup2(c_fd, 1);
-				dup2(c_fd, 2);
+				//dup2(c_fd, 2);
 				close(c_fd);
 				return ;
 			}
@@ -93,10 +96,30 @@ public:
 };
 int main()
 {
+	chdir("/var/www/cgi-bin/");
 	PG_TCP Rixia;
 	Rixia.go();
 	cout << "HTTP/1.1 200 OK" << endl;
 	cout << "Cache-Control: no-cache" << endl;
+	string tmp;
+	while (getline(cin,tmp))
+	{
+		cerr << tmp << endl;
+		string t;
+		istringstream scin(tmp);
+		scin >> t;
+		if (t == "GET")
+		{
+			scin >> t;
+			t.erase(0,1);
+			//cerr << "SET " << t << endl;
+			setenv("QUERY_STRING", t.c_str(), 1);
+			t = getenv("QUERY_STRING");
+			//cerr << "QUERY_STRING " << t << endl;
+		}
+		else if (t == "Connection:")break;
+	}
+	
 	execlp("./1_hw3", "./1_hw3", NULL);
 	//char c;
 	//while(cin.get(c))cout << c;
