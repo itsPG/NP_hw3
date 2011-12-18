@@ -160,7 +160,7 @@ public:
 	void send_msg(int q)
 	{
 		string tmp = "";
-		while (data[q][count[q]] != '\n')
+		while (data[q][count[q]] != '\n' && count[q]<data[q].size())
 		{
 			tmp += data[q][count[q]];
 			count[q]++;
@@ -168,8 +168,7 @@ public:
 		if (tmp == "exit") done_flag[q] = 1;
 		tmp += data[q][count[q]];
 		count[q]++;
-		//cout << "write break at " << count[i] << endl;
-		//cout << "write " << tmp << " / size:" << tmp.size() << endl;
+
 		write(fd[q], tmp.c_str(), tmp.size());
 	}
 	void print_msg_unit(string q, string at, int i)
@@ -188,7 +187,7 @@ public:
 	}
 	void print_head(int q)
 	{
-		//print_msg("")
+		print_msg_unit(host_name[q], "ip", q);
 	}
 	int go()
 	{
@@ -217,6 +216,7 @@ public:
 							}
 							FD_CLR(fd[i], &ws);
 							FSM[i] = F_READING;
+							print_head(i);
 						}
 						break;
 					
@@ -244,7 +244,7 @@ public:
 							string msg = recv_msg(i);
 							if (msg == "")
 							{
-								cout << "read error!!" << endl;
+								//cout << "read error!!" << endl;
 								FD_CLR(fd[i], &ws);
 								FD_CLR(fd[i], &rs);
 								shutdown(fd[i],2);
