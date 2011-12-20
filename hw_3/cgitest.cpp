@@ -156,7 +156,7 @@ public:
 		}
 		return msg;
 	}
-	void send_msg(int q) // return 0 when success, 1 when there's something left.
+	int send_msg(int q) // return 0 when success, 1 when there's something left.
 	{
 		string tmp = "";
 		while (data[q][count[q]] != '\n' && count[q]<data[q].size())
@@ -169,7 +169,12 @@ public:
 		count[q]++;
 
 		int len = write(fd[q], tmp.c_str(), tmp.size());
-		
+		if (len < tmp.size())
+		{
+			count[q] -= tmp.size() - len;
+			return 1;
+		}
+		return 0;
 	}
 	void print_msg_unit(string q, string at, int i)
 	{
@@ -223,7 +228,8 @@ public:
 					case F_WRITING:
 						if (FD_ISSET(fd[i], &wfds))
 						{
-							send_msg(i);
+							int flag = send_msg(i);
+							if (flag) break;
 							FD_CLR(fd[i], &ws);
 							FD_SET(fd[i], &rs);
 							FSM[i] = F_READING;
