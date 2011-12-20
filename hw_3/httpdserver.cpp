@@ -48,7 +48,7 @@ public:
 		socklen_t len;
 		char buf[10000]; 
 		char addr_p[INET_ADDRSTRLEN]; 
-		int port = 8080;
+		int port = 8081;
 		int n,r; 
        
 		bzero(&sin, sizeof(sin)); 
@@ -102,6 +102,7 @@ int main()
 	cout << "HTTP/1.1 200 OK" << endl;
 	cout << "Cache-Control: no-cache" << endl;
 	string tmp;
+	string cgi_name,query_string;
 	while (getline(cin,tmp))
 	{
 		cerr << tmp << endl;
@@ -112,15 +113,41 @@ int main()
 		{
 			scin >> t;
 			t.erase(0,1);
+			cgi_name = t.substr(0, t.find("?"));
+			if (t.find("?") == string::npos)
+				t = "";
+			else
+				t = t.substr(t.find("?")+1);
 			//cerr << "SET " << t << endl;
-			setenv("QUERY_STRING", t.c_str(), 1);
-			t = getenv("QUERY_STRING");
+			//setenv("QUERY_STRING", t.c_str(), 1);
+			//t = getenv("QUERY_STRING");
+			query_string = "QUERY_STRING="+t;
 			//cerr << "QUERY_STRING " << t << endl;
 		}
 		else if (t == "Connection:")break;
 	}
+	cerr << "cgi_name is " << cgi_name << endl;
+	cerr << "query_string is " << query_string << endl;
+	char tmp1[1000]={0}, tmp2[1000]={0};
+	strcpy(tmp1, cgi_name.c_str());
+	strcpy(tmp2, query_string.c_str()); 
+	char *argv[] = {tmp1, 0};
+	char *envp[] =
+	{
+		tmp2,
+		"CONTENT_LENGTH=2",
+		"REQUEST_METHOD=3",
+		"SCRIPT_NAME=4",
+		"REMOTE_HOST=5",
+		"REMOTE_ADDR=6",
+		"ANTH_TYPE=7",
+		"REMOTE_USER=8",
+		"REMOTE_IDENT=9",
+		0
+	};
 	
-	execlp("./1_hw3", "./1_hw3", NULL);
+	//execlp("./1_hw3", "./1_hw3", NULL);
+	execve(cgi_name.c_str(), argv, envp);
 	//char c;
 	//while(cin.get(c))cout << c;
 }

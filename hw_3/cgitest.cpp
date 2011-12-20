@@ -151,13 +151,12 @@ public:
 			if (c == '%')pa_detect = 1;
 			if (c == '\n')
 			{
-				if (msg[msg.size()-1] == '\r') msg.erase(msg.size()-1);
 				break;
 			}
 		}
 		return msg;
 	}
-	void send_msg(int q)
+	void send_msg(int q) // return 0 when success, 1 when there's something left.
 	{
 		string tmp = "";
 		while (data[q][count[q]] != '\n' && count[q]<data[q].size())
@@ -169,7 +168,8 @@ public:
 		tmp += data[q][count[q]];
 		count[q]++;
 
-		write(fd[q], tmp.c_str(), tmp.size());
+		int len = write(fd[q], tmp.c_str(), tmp.size());
+		
 	}
 	void print_msg_unit(string q, string at, int i)
 	{
