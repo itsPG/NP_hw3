@@ -78,12 +78,13 @@ public:
 	struct hostent *he;
 	string host_name[11];
 	string data[11];
-	string cmd[11][10001];
+	string cmd[11];
 	int port[11];
 	int FSM[11];
 	int count[11];
 	int cmd_m[11];
 	bool done_flag[11];
+	bool buffering[11];
 	const static int F_CONNECTING = 1, F_READING = 2, F_WRITING = 3, F_LAST_READ = 4, F_DONE = 5;
 	int max;
 	int alive;
@@ -96,8 +97,10 @@ public:
 	}
 	void init(int q)
 	{
+		cmd[q] = "";
 		count[q] = 0;
 		done_flag[q] = 0;
+		buffering[q] = 0;
 		FSM[q] = F_CONNECTING;
 		he = gethostbyname(host_name[q].c_str());
 		if (he == NULL)
@@ -164,31 +167,44 @@ public:
 			tmp += data[q][count[q]];
 			count[q]++;
 		}
-		if (tmp == "exit") done_flag[q] = 1;
+		if (buffering[q] == 0)
+		{
+			if (tmp == "exit") done_flag[q] = 1;
+			print_msg("<b>" + tmp + "</b><br/>", q);
+		}
+		//cmd[q] = tmp;
 		tmp += data[q][count[q]];
 		count[q]++;
-
+		
 		int len = write(fd[q], tmp.c_str(), tmp.size());
 		if (len < tmp.size())
 		{
 			count[q] -= tmp.size() - len;
+			buffering[q] = 1;
 			return 1;
 		}
+		buffering[q] = 0;
 		return 0;
 	}
 	void print_msg_unit(string q, string at, int i)
 	{
+		string q2 = "";
+		for (int i = 0; i < q.size(); i++)
+		{
+			if (q[i] == '\"')
+				q2 += "\\\"";
+			else if (q[i] == '\n')
+				q2 += "<br/>";
+			else if (q[i] != '\r')
+				q2 += q[i];
+		}
 		cout << "<script language = \"JavaScript\">document.all[\'";
 		cout << at << i;
-		cout << "\'].innerHTML += \"" << q << "\";</script>" << endl;
+		cout << "\'].innerHTML += \"" << q2 << "\";</script>" << endl;
 	}
 	void print_msg(string q, int i)
 	{
-		if(q.find('\n') != string::npos)
-		{
-			q.erase(q.find('\n'),1);
-		}
-		print_msg_unit(q+"<br/>", "m", i);
+		print_msg_unit(q, "m", i);
 	}
 	void print_head(int q)
 	{
